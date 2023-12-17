@@ -1,20 +1,17 @@
 package ru.itis.inf301.lab13;
 
-public class NextNumberImpl implements NextNumber {
+public class NextNumImpl implements NextNum {
 
     private Node current;
 
-    public NextNumberImpl() {
+    public NextNumImpl() {
         Node root = new Node(1);
         current = root;
-
-        for (int i = 2; i <= 10; ++i) {
+        for(int i = 2; i <= 10; ++i) {
             current.next = new Node(i);
             current = current.next;
         }
-
         current.next = root;
-        System.out.println();
     }
 
     @Override
