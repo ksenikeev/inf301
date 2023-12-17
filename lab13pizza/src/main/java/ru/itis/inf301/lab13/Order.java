@@ -43,7 +43,7 @@ public class Order {
      *
      * @return
      */
-    public static OrderBuilder getBuilder() {
+    public static OrderBuilder builder() {
         return new OrderBuilder();
     }
 
