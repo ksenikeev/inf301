@@ -2,7 +2,7 @@ package ru.itis.inf301.lab2_2;
 
 public class Main {
     public static void main(String[] args) {
-        TestList<Integer> testList = new TestList<Integer>();
+        TestList<Integer> testList = new TestList<>();
 
         //testList.add('1');
         testList.add(2);

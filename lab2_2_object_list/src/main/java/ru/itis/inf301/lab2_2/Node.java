@@ -1,6 +1,6 @@
 package ru.itis.inf301.lab2_2;
 
-public class Node<T> {
+public class Node<T extends Comparable> {
     private T value;
     private Node<T> next;
 

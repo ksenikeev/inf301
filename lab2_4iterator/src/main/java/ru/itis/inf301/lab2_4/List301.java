@@ -1,17 +1,15 @@
-package ru.itis.inf301.lab2_2;
+package ru.itis.inf301.lab2_4;
 
 /**
  * Структура, хранящая однотипные элементы Integer
  * каждый элемент имеет позицию ( 0 .. )
  */
-public interface List301 <T extends Comparable > {
-    void add(T e);
+public interface List301<T> {
+    void add(T e) ;
 
-    void delete(int index);
+    void delete(int index) throws IndexOutOfBoundsException;
 
-    T pop();
-
-    T get(int index);
+    T get(int index) throws IndexOutOfBoundsException;
 
     /** Количество хранимых элементов */
     int size();

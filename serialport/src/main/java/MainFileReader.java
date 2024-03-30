@@ -13,7 +13,7 @@ import jssc.SerialPortException;
  * ждем следующей метки начала пакета
  *
  */
-public class MainReader {
+public class MainFileReader {
 
     static SerialPort serialPort = new SerialPort("/dev/ttyUSB0");
 
