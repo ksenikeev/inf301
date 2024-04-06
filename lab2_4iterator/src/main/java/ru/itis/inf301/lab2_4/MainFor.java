@@ -22,6 +22,7 @@ public class MainFor {
 
         list.forEach(MainFor::print);
 
+        List<String> lst;
 
     }
 

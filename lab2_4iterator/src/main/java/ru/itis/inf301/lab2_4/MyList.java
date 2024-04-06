@@ -1,6 +1,8 @@
 package ru.itis.inf301.lab2_4;
 
 import java.util.Iterator;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 public class MyList<T> implements List301<T>, Iterable<T> {
 
@@ -45,5 +47,10 @@ public class MyList<T> implements List301<T>, Iterable<T> {
         public T next() {
             return (T)array[currentPosition++];
         }
+
+        public Stream<T> stream() {
+            return StreamSupport.stream(spliterator(), false);
+        }
+
     }
 }
