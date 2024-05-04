@@ -18,9 +18,6 @@ public class MainReader {
     static SerialPort serialPort = new SerialPort("/dev/ttyUSB0");
 
     public static void main(String[] args) {
-        //new PortReader().workPackage(new byte[] {(byte)0xC8, 118,12,-3,44});
-
-
         try {
             //Открываем порт
             serialPort.openPort();
@@ -45,8 +42,7 @@ public class MainReader {
     private static class PortReader implements SerialPortEventListener {
 
         static byte[] pac = new byte[64];
-        static int buf_position = 0;
-        static boolean packageJustReaded = true; // индикатор завершенности пакета
+        static boolean start_package = false; // индикатор  процесса формирования пакета
         static byte pac_length = 0;
         static int pac_readed_bytes = 0;
         static int[] channels = new int[16];
@@ -58,73 +54,41 @@ public class MainReader {
                     byte[] buf = serialPort.readBytes();
 
 
-                    System.out.println("buf:"+buf.length);
-
                     for (byte b : buf) {
-                        int i = b & 0xFF;
-                        System.out.printf("0x%02X, ", i);
-                    }
-                    System.out.println();
+                        // пакет еще не сформирован полностью, но часть данных уже получена
+                        if (start_package && pac_length > 0) {
+                            pac[pac_readed_bytes++] = b;
 
+                            if (pac_readed_bytes == pac_length + 2) {
+                                work_package(pac);
 
-                    buf_position = 0;
-                    if (buf != null) {
-                        int i = 0;
-                        while (buf_position < buf.length) {
-                            //System.out.println(++i);
-                            // пакет еще не сформирован полностью, но часть данных уже получена
-                            if (!packageJustReaded && pac_length > 0) {
-                                //System.out.println("B");
-                                // данных в буфере порта хватает, чтобы сформировать пакет
-                                //
-                                if (buf.length - buf_position >= pac_length + 2 - pac_readed_bytes) {
-                                    System.arraycopy(buf, buf_position, pac, pac_readed_bytes, pac_length + 2 - pac_readed_bytes);
-
-                                    workPackage(pac);
-
-                                    pac_length = 0;
-                                    packageJustReaded = true;
-                                    pac_readed_bytes = 0;
-                                    buf_position += pac_length + 2 - pac_readed_bytes;
-                                    continue;
-                                    //переходим к анализу последующих байт
-                                } else {
-                                    System.arraycopy(buf, buf_position, pac, pac_readed_bytes, buf.length - buf_position);
-                                    pac_readed_bytes = pac_readed_bytes + buf.length - buf_position;
-                                    //больше ничего нет, уходим из цикла ожидать следующую порцию данных
-                                    break;
-                                }
-                            } else if (!packageJustReaded && pac_readed_bytes == 1) {// прочитали 1 байт не знаем длину
-                                pac_length = buf[buf_position];
-                                //System.out.println("A buf[" + buf_position  +"]=" + pac_length);
-
-                                if (pac_length <= 62) {
-                                    pac[1] = pac_length;
-                                    pac_readed_bytes = 2;
-                                } else { // Это не длина, будем ждать следующей метки
-                                    packageJustReaded = true;
-                                }
-                                buf_position++;
-                                continue;
+                                pac_length = 0;
+                                start_package = false;
+                                pac_readed_bytes = 0;
                             }
-
-                            // ищем метку начала пакета
-                            for ( ;buf_position < buf.length; buf_position++) {
-                                int b = buf[buf_position] & 0xFF;
-                                if ((b == 0xc8 || b == 0xee || b == 0xea || b == 0xec) && packageJustReaded) {
-                                    //System.out.println("start pac " + buf_position);
-                                    pac[0] = buf[buf_position];
-                                    pac_readed_bytes = 1;
-                                    packageJustReaded = false;
-                                    buf_position++; //поскольку выходим из цикла принудительно
-                                    break;
-                                }
+                            continue;
+                        } else if (start_package && pac_readed_bytes == 1) // прочитали 1 байт не знаем длину
+                        {
+                            pac_length = b;
+                            if ((pac_length & 0xFF) <= 62) {
+                                pac[pac_readed_bytes++] = pac_length; //pac[1] = pac_length
+                            } else { // Это не длина, будем ждать следующей метки
+                                start_package = false;
                             }
-
+                            continue;
                         }
-                        //System.out.println("buf readed");
-                    }
 
+                        // пакет еще не начал формироваться
+                        // проверяем полученный байт на метку начала пакета
+                        int start_byte = b & 0xFF;
+
+                        if ((start_byte == 0xc8 || start_byte == 0xee || start_byte == 0xea || start_byte == 0xec) && !start_package) {
+                            pac[0] = b;
+                            pac_readed_bytes = 1;
+                            start_package = true;
+                            continue;
+                        }
+                    }
                 } catch (SerialPortException e) {
                     e.printStackTrace();
                 } catch (Exception ex) {
@@ -133,49 +97,91 @@ public class MainReader {
             }
         }
 
-        public void workPackage(byte[] pac) {
-
-/*
+        public void work_package(byte[] pac) {
             if (pac[2] == 0x16) {
+                System.out.print("chanels: ");
                 unpackChannels(pac, channels);
                 for (int c : channels) {
-                    System.out.printf("%d, ", c);
+                    System.out.printf("%5d ", c);
                 }
                 System.out.println();
             } else if (pac[2] == 0x14) {
-                System.out.println("0x14");
+                System.out.println("LINK_STATISTICS");
             }
-*/
-            System.out.println("pac:");
-            for (byte b : pac) {
-                int i = b & 0xFF;
-                System.out.printf("0x%02X, ", i);
-            }
-            System.out.println();
         }
 
         /*
          * Выделение сигналов каналов (по 11 бит на каждый) из массива, полученного через UART от приемника
          */
-        void unpackChannels (byte[] pac, int[] channels) {
+        public void unpackChannels (byte[] pac, int[] channels) {
             int inputChannelMask = 0x7FF;
-            channels[0] = (((pac[3] & 0xFF ) << 8) & inputChannelMask) | (pac[2] & 0xFF);
-            channels[1] = (((pac[4] & 0xFF ) << 5) & inputChannelMask) | ((pac[3] & 0xFF) >> 3);
-            channels[2] = (((pac[6] & 0xFF) << 10) & inputChannelMask) | ((pac[5] & 0xFF) << 2) | ((pac[4] & 0xFF) >> 6);
-            channels[3] = (((pac[7] & 0xFF) << 7) & inputChannelMask) | ((pac[6] & 0xFF) >> 1);
-            channels[4] = (((pac[8] & 0xFF) << 4) & inputChannelMask) | ((pac[7] & 0xFF) >> 4);
-            channels[5] = (((pac[10] & 0xFF) << 9) & inputChannelMask) | ((pac[9] & 0xFF) << 1) | ((pac[8] & 0xFF) >> 7);
-            channels[6] = (((pac[11] & 0xFF) << 6) & inputChannelMask) | ((pac[10] & 0xFF) >> 2);
-            channels[7] = (((pac[12] & 0xFF) << 3) & inputChannelMask) | ((pac[11] & 0xFF) >> 5);
+            channels[0] = (((pac[4] & 0xFF ) << 8) & inputChannelMask) | (pac[3] & 0xFF);
+            channels[1] = (((pac[5] & 0xFF ) << 5) & inputChannelMask) | ((pac[4] & 0xFF) >> 3);
+            channels[2] = (((pac[7] & 0xFF) << 10) & inputChannelMask) | ((pac[6] & 0xFF) << 2) | ((pac[5] & 0xFF) >> 6);
+            channels[3] = (((pac[8] & 0xFF) << 7) & inputChannelMask) | ((pac[7] & 0xFF) >> 1);
+            channels[4] = (((pac[9] & 0xFF) << 4) & inputChannelMask) | ((pac[8] & 0xFF) >> 4);
+            channels[5] = (((pac[11] & 0xFF) << 9) & inputChannelMask) | ((pac[10] & 0xFF) << 1) | ((pac[9] & 0xFF) >> 7);
+            channels[6] = (((pac[12] & 0xFF) << 6) & inputChannelMask) | ((pac[11] & 0xFF) >> 2);
+            channels[7] = (((pac[13] & 0xFF) << 3) & inputChannelMask) | ((pac[12] & 0xFF) >> 5);
 
-            channels[8] = (((pac[14] & 0xFF) << 8) & inputChannelMask) | (pac[13] & 0xFF);
-            channels[9] = (((pac[15] & 0xFF) << 5) & inputChannelMask) | ((pac[14] & 0xFF) >> 3);
-            channels[10] = (((pac[17] & 0xFF) << 10) & inputChannelMask) | ((pac[16] & 0xFF) << 2) | ((pac[15] & 0xFF) >> 6);
-            channels[11] = (((pac[18] & 0xFF) << 7) & inputChannelMask) | ((pac[17] & 0xFF) >> 1);
-            channels[12] = (((pac[19] & 0xFF) << 4) & inputChannelMask) | ((pac[18] & 0xFF) >> 4);
-            channels[13] = (((pac[21] & 0xFF) << 9) & inputChannelMask) | ((pac[20] & 0xFF) << 1) | ((pac[19] & 0xFF) >> 7);
-            channels[14] = (((pac[22] & 0xFF) << 6) & inputChannelMask) | ((pac[21] & 0xFF) >> 2);
-            channels[15] = (((pac[23] & 0xFF) << 3) & inputChannelMask) | ((pac[22] & 0xFF) >> 5);
+            channels[8] = (((pac[15] & 0xFF ) << 8) & inputChannelMask) | (pac[14] & 0xFF);
+            channels[9] = (((pac[16] & 0xFF ) << 5) & inputChannelMask) | ((pac[15] & 0xFF) >> 3);
+            channels[10] = (((pac[18] & 0xFF) << 10) & inputChannelMask) | ((pac[17] & 0xFF) << 2) | ((pac[16] & 0xFF) >> 6);
+            channels[11] = (((pac[19] & 0xFF) << 7) & inputChannelMask) | ((pac[18] & 0xFF) >> 1);
+            channels[12] = (((pac[20] & 0xFF) << 4) & inputChannelMask) | ((pac[19] & 0xFF) >> 4);
+            channels[13] = (((pac[22] & 0xFF) << 9) & inputChannelMask) | ((pac[21] & 0xFF) << 1) | ((pac[20] & 0xFF) >> 7);
+            channels[14] = (((pac[23] & 0xFF) << 6) & inputChannelMask) | ((pac[22] & 0xFF) >> 2);
+            channels[15] = (((pac[24] & 0xFF) << 3) & inputChannelMask) | ((pac[23] & 0xFF) >> 5);
+        }
+    }
+
+    /*
+     * Выделение сигналов каналов (по 11 бит на каждый) из массива, полученного через UART от приемника
+     */
+    void unpackChannels (byte[] pac, int[] channels) {
+        int inputChannelMask = 0x7FF;
+        channels[0] = (((pac[4] & 0xFF ) << 8) & inputChannelMask) | (pac[3] & 0xFF);
+        channels[1] = (((pac[5] & 0xFF ) << 5) & inputChannelMask) | ((pac[4] & 0xFF) >> 3);
+        channels[2] = (((pac[7] & 0xFF) << 10) & inputChannelMask) | ((pac[6] & 0xFF) << 2) | ((pac[5] & 0xFF) >> 6);
+        channels[3] = (((pac[8] & 0xFF) << 7) & inputChannelMask) | ((pac[7] & 0xFF) >> 1);
+        channels[4] = (((pac[9] & 0xFF) << 4) & inputChannelMask) | ((pac[8] & 0xFF) >> 4);
+        channels[5] = (((pac[11] & 0xFF) << 9) & inputChannelMask) | ((pac[10] & 0xFF) << 1) | ((pac[9] & 0xFF) >> 7);
+        channels[6] = (((pac[12] & 0xFF) << 6) & inputChannelMask) | ((pac[11] & 0xFF) >> 2);
+        channels[7] = (((pac[13] & 0xFF) << 3) & inputChannelMask) | ((pac[12] & 0xFF) >> 5);
+
+        channels[8] = (((pac[15] & 0xFF ) << 8) & inputChannelMask) | (pac[14] & 0xFF);
+        channels[9] = (((pac[16] & 0xFF ) << 5) & inputChannelMask) | ((pac[15] & 0xFF) >> 3);
+        channels[10] = (((pac[18] & 0xFF) << 10) & inputChannelMask) | ((pac[17] & 0xFF) << 2) | ((pac[16] & 0xFF) >> 6);
+        channels[11] = (((pac[19] & 0xFF) << 7) & inputChannelMask) | ((pac[18] & 0xFF) >> 1);
+        channels[12] = (((pac[20] & 0xFF) << 4) & inputChannelMask) | ((pac[19] & 0xFF) >> 4);
+        channels[13] = (((pac[22] & 0xFF) << 9) & inputChannelMask) | ((pac[21] & 0xFF) << 1) | ((pac[20] & 0xFF) >> 7);
+        channels[14] = (((pac[23] & 0xFF) << 6) & inputChannelMask) | ((pac[22] & 0xFF) >> 2);
+        channels[15] = (((pac[24] & 0xFF) << 3) & inputChannelMask) | ((pac[23] & 0xFF) >> 5);
+    }
+
+    void unpackChannels1 (byte[] pac, int[] channels) {
+        //int inputChannelMask = 0x7FF;
+        int numOfChannels = 16;
+        int srcBits = 11;
+        int dstBits = 32;
+        int inputChannelMask = (1 << srcBits) - 1;
+
+        // code from BetaFlight rx/crsf.cpp / bitpacker_unpack
+        byte bitsMerged = 0;
+        int readValue = 0;
+        int readByteIndex = 3;
+        for (int n = 0; n < numOfChannels; n++)
+        {
+            while (bitsMerged < srcBits)
+            {
+                byte readByte = pac[readByteIndex++];
+                readValue |= ( readByte & 0xFF) << bitsMerged;
+                bitsMerged += 8;
+            }
+            //printf("rv=%x(%x) bm=%u\n", readValue, (readValue & inputChannelMask), bitsMerged);
+            channels[n] = (readValue & inputChannelMask);
+            readValue >>= srcBits;
+            bitsMerged -= srcBits;
         }
     }
 }
